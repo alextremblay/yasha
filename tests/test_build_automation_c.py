@@ -22,51 +22,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+from sys import stderr, stdout
+from yasha.yasha import ENCODING
+from yasha.cli import cli
 import sys
-import subprocess
-from os import path, chdir, mkdir
+from subprocess import run, PIPE
+from os import path, chdir
+from textwrap import dedent
 
 import pytest
 
-if sys.version_info[0] == 2:
-    FileNotFoundError = IOError
-
 SCRIPT_PATH = path.dirname(path.realpath(__file__))
 
-requires_py27_or_py35_or_greater = pytest.mark.skipif(
-    sys.version_info < (2,7) or
-    (sys.version_info >= (3,) and sys.version_info < (3,5)),
-    reason='Requires either Python 2.7 or >= 3.5'
-)
-
-def check_output(cmd):
-    try:
-        return subprocess.check_output(cmd)
-    except FileNotFoundError as e:
-        msg = str(e)
-        pytest.skip(msg)
+def wrap(text):
+    return dedent(text).lstrip()
 
 
-def check_call(cmd):
-    try:
-        return subprocess.check_call(cmd)
-    except FileNotFoundError as e:
-        msg = str(e)
-        pytest.skip(msg)
-
-
-def setup_function():
-    chdir(SCRIPT_PATH + '/fixtures/c_project')
-
-
-def teardown_function(function):
-    chdir(SCRIPT_PATH + '/fixtures/c_project')
-    if 'scons' in function.__name__:
-        check_call(('scons', '-c'))
-        check_call(('scons', '-C', 'src', '-c'))
-    else:
-        check_call(('make', 'clean'))
-        check_call(('make', '-C', 'src', 'clean'))
+def yasha_cli(args):
+    return cli(args, standalone_mode=False) # pylint: disable=no-value-for-parameter,unexpected-keyword-arg
 
 build_dependencies = (
     'foo.c.jinja',
@@ -76,130 +49,124 @@ build_dependencies = (
     'header.j2inc'
 )
 
-@pytest.mark.slowtest
-def test_make():
-    build_cmd = ('make',)
-
-    # First build
-    out = check_output(build_cmd)
-    assert not b'is up to date' in out
-    assert path.isfile('build/a.out')
-
-    # Second build shouldn't do anything
-    out = check_output(build_cmd)
-    assert b'is up to date' in out
-
-    # Check program output
-    out = check_output(('./build/a.out'))
-    assert b'bar has 3 chars ...\n' == out
-
-    # Require rebuild after touching dependency
-    for dep in build_dependencies:
-        check_call(('touch', path.join('src', dep)))
-        out = check_output(build_cmd)
-        assert not b'is up to date' in out
-
 
 @pytest.mark.slowtest
-def test_cmake():
-    mkdir('build')
-    chdir('build')
-    build_cmd = ('make',)
-
-    # First build
-    check_call(('cmake', '..'))
-    out = check_output(build_cmd)
-    assert b'Linking C executable' in out
-    assert path.isfile('a.out')
-
-    # Immediate new build shouldn't do anything
-    out = check_output(build_cmd)
-    assert not b'Linking C executable' in out
-
-    # Check program output
-    out = check_output(['./a.out'])
-    assert b'bar has 3 chars ...\n' == out
-
-    # Require rebuild after touching build dependency
-    for dep in build_dependencies:
-        check_call(('touch', path.join('../src/', dep)))
-        out = check_output(build_cmd)
-        assert b'Linking C executable' in out
-
-
-@pytest.mark.slowtest
-@requires_py27_or_py35_or_greater
 def test_scons():
+    # This test is an end-to-end test of the entire SCons build system, including the yasha.scons component we need to test, 
+    # and including the entire Clang build toolchain. It should be rewritten to be a unit test of yasha.scons by someone who 
+    # knows how to write SCons CBuilder unit tests
+    pytest.importorskip("scons", reason="SCons not installed")
+    chdir(SCRIPT_PATH + '/fixtures/c_project')
     build_cmd = ('scons', '-Q')
 
     # First build
-    out = check_output(build_cmd)
-    assert not b'is up to date' in out
+    out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
+    assert not 'is up to date' in out
     assert path.isfile('build/a.out')
 
     # Immediate new build shouldn't do anything
-    out = check_output(build_cmd)
-    assert b'is up to date' in out
+    out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
+    assert 'is up to date' in out
 
     # Check program output
-    out = check_output(('./build/a.out'))
-    assert b'bar has 3 chars ...\n' == out
+    out = run(('./build/a.out'), stdout=PIPE, encoding=ENCODING).stdout
+    assert 'bar has 3 chars ...\n' == out
 
     # FIXME: Sometimes the rebuild happens sometimes not.
     for dep in build_dependencies:
-        check_call(('touch', path.join('src', dep)))
-        out = check_output(build_cmd)
+        run(('touch', path.join('src', dep)), stdout=PIPE, encoding=ENCODING)
+        out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
         #assert not b'is up to date' in out
         print(out) # For debugging purposes, run 'pytest -s -k scons'
+    run(('scons', '-c'))
+    run(('scons', '-C', 'src', '-c'))
 
 
 @pytest.mark.slowtest
-def test_make_without_build_dir():
-    chdir('src')
-    build_cmd = ('make',)
-
-    # First build
-    out = check_output(build_cmd)
-    assert not b'is up to date' in out
-    assert path.isfile('a.out')
-
-    # Immediate new build shouldn't do anything
-    out = check_output(build_cmd)
-    assert b'is up to date' in out
-
-    # Check program output
-    out = check_output(('./a.out'))
-    assert b'bar has 3 chars ...\n' == out
-
-    # Require rebuild after touching dependency
-    for dep in build_dependencies:
-        check_call(('touch', dep))
-        out = check_output(build_cmd)
-        assert not b'is up to date' in out
-
-
-@pytest.mark.slowtest
-@requires_py27_or_py35_or_greater
 def test_scons_without_build_dir():
+    # This test is an end-to-end test of the entire SCons build system, including the yasha.scons component we need to test, 
+    # and including the entire Clang build toolchain. It should be rewritten to be a unit test of yasha.scons by someone who 
+    # knows how to write SCons CBuilder unit tests
+    pytest.importorskip("scons", reason="SCons not installed")
+    chdir(SCRIPT_PATH + '/fixtures/c_project')
     chdir('src')
     build_cmd = ('scons', '-Q')
 
     # First build
-    out = check_output(build_cmd)
-    assert not b'is up to date' in out
+    out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
+    assert not 'is up to date' in out
     assert path.isfile('a.out')
 
     # Immediate new build shouldn't do anything
-    out = check_output(build_cmd)
-    assert b'is up to date' in out
+    out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
+    assert 'is up to date' in out
 
     # Check program output
-    out = check_output(('./a.out'))
-    assert b'bar has 3 chars ...\n' == out
+    out = run(('./a.out'), stdout=PIPE, encoding=ENCODING).stdout
+    assert 'bar has 3 chars ...\n' == out
 
     # FIXME: Sometimes the rebuild happens sometimes not.
     for dep in build_dependencies:
-        check_call(('touch', dep))
-        out = check_output(build_cmd)
+        run(('touch', dep))
+        out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
         #assert not b'is up to date' in out
         print(out) # for debugging, run 'pytest -s -k scons'
+    run(('scons', '-c'))
+    run(('scons', '-C', 'src', '-c'))  
+
+
+def test_makefile_dependency_flag_m(tmpdir, capfd):
+    template = wrap("""
+        {% include "header.j2inc" %}
+
+        void foo() {
+            char foo[] = "{{ foo }}";
+            printf("%s has %d chars ...\\n", foo, {{ foo|length }});
+        }""")
+
+    variables = 'foo = "bar"'
+    j2inc = wrap("""
+        #include <stdio.h>
+        #include "foo.h" """)
+
+    tmpdir.chdir()
+    tmpdir.join("foo.toml").write(variables)
+    tmpdir.join("foo.c.jinja").write(template)
+    tmpdir.join("header.j2inc").write(j2inc)
+
+    yasha_cli(['-M', 'foo.c.jinja'])
+    captured_output, _ = capfd.readouterr()
+    assert captured_output == 'foo.c: foo.c.jinja foo.toml header.j2inc\n'
+
+
+def test_makefile_dependency_flag_md(tmpdir):
+    template = wrap("""
+        {% include "header.j2inc" %}
+
+        void foo() {
+            char foo[] = "{{ foo }}";
+            printf("%s has %d chars ...\\n", foo, {{ foo|length }});
+        }""")
+
+    variables = 'foo = "bar"'
+    j2inc = wrap("""
+        #include <stdio.h>
+        #include "foo.h" """)
+
+    tmpdir.chdir()
+    tmpdir.join("foo.toml").write(variables)
+    tmpdir.join("foo.c.jinja").write(template)
+    tmpdir.join("header.j2inc").write(j2inc)
+
+    yasha_cli(['-MD', 'foo.c.jinja'])
+    assert path.isfile("foo.c.d")
+    assert tmpdir.join("foo.c.d").read() == 'foo.c: foo.c.jinja foo.toml header.j2inc\n'
+    
+    assert path.isfile("foo.c")
+    assert tmpdir.join("foo.c").read() == wrap("""
+        #include <stdio.h>
+        #include "foo.h" 
+        void foo() {
+            char foo[] = "bar";
+            printf("%s has %d chars ...\\n", foo, 3);
+        }""")
