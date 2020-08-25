@@ -14,26 +14,26 @@ setup(
     author_email="kblomqvist@iki.fi",
     version=__version__,
     description="A command-line tool to render Jinja templates",
-    keywords=["jinja", "code generator"],
+    keywords=["jinja", "code generator", "template"],
     license="MIT",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
         "Click",
-        "Jinja2<2.11",
+        "Jinja2",
         "pytoml",
         "pyyaml",
         "xmltodict",
-        'configparser;python_version<"3.5"'
     ],
+    python_requires='>=3.6',
     entry_points='''
         [console_scripts]
         yasha=yasha.cli:cli
     ''',
     classifiers=[
-        "Programming Language :: Python :: 2.7",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Topic :: Software Development :: Code Generators",
         "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: MIT License",
