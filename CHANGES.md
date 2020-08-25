@@ -3,7 +3,7 @@ Version 5.0
 
 Major release, unreleased
 
-- Dropped support for Python 2.7.
+- Dropped support for Python 2.7 and 3.5. Minimum required python version is 3.6
 - Fixed Jinja 2.11.x compatibility issue (gh-60).
 - The option `--keep-trailing-newline` was removed in favor of making
   it default. The old behaviour can be achieved with the new option

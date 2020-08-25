@@ -23,6 +23,7 @@ venv/
 .venv/
 
 
+# Testing artifacts
 tests/**/build/
 tests/**/CMakeFiles/
 tests/**/.sconsign.dblite
@@ -31,3 +32,7 @@ tests/**/CMakeCache.txt
 tests/**/*.cmake
 tests/fixtures/nrf51.rs
 tests/fixtures/nrf51.rs.j2extc
+
+# IDE configuration
+.idea/
+.vscode/

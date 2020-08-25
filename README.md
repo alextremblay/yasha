@@ -11,9 +11,11 @@ yasha -v variables.yaml template.txt.j2
 
 will render `template.txt.j2` into a new file named as `template.txt`. See how the created file name is derived from the template name. The template itself remains unchanged.
 
-The tool was originally written to generate code for the zinc.rs' [I/O register interface](http://zinc.rs/apidocs/ioreg/index.html) from the [CMSIS-SVD](https://www.keil.com/pack/doc/CMSIS/SVD/html/index.html) description file, and was used to interface with [the peripherals of Nordic nRF51](https://github.com/kblomqvist/yasha/tree/master/tests/fixtures) ARM Cortex-M processor-based microcontroller. Yasha has since evolved to be flexible enough to be used in any project where the code generation is needed. The tool allows extending Jinja by domain specific filters, tests and extensions, and it operates smoothly with the commonly used build automation software like Make, CMake and SCons.
+The tool was originally written to generate code for the zinc.rs' [I/O register interface](http://zinc.rs/apidocs/ioreg/index.html) from the [CMSIS-SVD](https://www.keil.com/pack/doc/CMSIS/SVD/html/index.html) description file, and was used to interface with [the peripherals of Nordic nRF51](https://github.com/kblomqvist/yasha/tree/master/tests/fixtures) ARM Cortex-M processor-based microcontroller. Yasha has since evolved to be flexible enough to be used in any project where code generation or template rendering is needed. The tool allows extending Jinja by domain specific filters, tests and extensions, and it operates smoothly with commonly used build automation software like Make, CMake and SCons.
 
 ## Installation
+
+Yasha requires python >= 3.6
 
 As a regular user:
 
@@ -33,6 +35,9 @@ or if you would like to take part into the development process:
 git clone https://github.com/kblomqvist/yasha.git
 pip install -e yasha
 ```
+
+Note: on operating system distributions which still ship python2 as default, you may need to use the command `pip3` instead of `pip`.
+ie. `pip3 install yasha`
 
 ## Usage
 
