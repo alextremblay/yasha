@@ -224,25 +224,27 @@ You can extend Yasha by custom Jinja [extensions](http://jinja.pocoo.org/docs/de
 yasha -e extensions.py -v variables.yaml template.j2
 ```
 
-Like for variable file, Yasha supports automatic extension file look up and sharing too. To avoid file collisions consider using the following naming convention for your template, extension, and variable files:
+Like for variable file, Yasha supports automatic extension file look up and sharing too. Having files like these in the current directory:
 
 ```
-template.py.j2
-template.py.py
-template.py.yaml
+template.j2
+template.py
+template.yaml
 ```
 
-Now the command-line call
+And calling:
 
 ```bash
-yasha template.py.j2
+yasha template.j2
 ```
 
-is equal to
+is equal to:
 
 ```bash
-yasha -e template.py.py -v template.py.yaml template.py.j2
+yasha -e template.py -v template.yaml template.j2
 ```
+
+Extensions files can end in `.py` or `.j2ext` and will automatically be picked up if their name matches the name of the template
 
 ### Tests
 
