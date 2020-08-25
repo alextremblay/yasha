@@ -22,12 +22,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-import pytest
-import os.path
-import sys
+from yasha.cli import cli
 
-SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
+from os import chdir, getcwd
+from pathlib import Path
+from textwrap import dedent
+
+import pytest
+
 
 @pytest.fixture
-def fixtures_dir():
-    return os.path.join(SCRIPT_PATH, "fixtures")
+def fixtures_dir() -> Path:
+    return Path(f'{__file__}/../fixtures').resolve()
+
+@pytest.fixture
+def with_tmp_path(tmp_path: Path):
+    """This fixture temporarily sets the current working directory to a new tmp directory for the duration of the test using the fixture.
+    After the test is complete, the previous working directory is restored"""
+    current_dir = getcwd()
+    try:
+        chdir(tmp_path)
+        yield tmp_path  # with statement block runs here
+    finally:
+        chdir(current_dir)
+
+
+def wrap(text):
+    return dedent(text).lstrip()
+
+
+def yasha_cli(args):
+    if isinstance(args, str):
+        args = args.split()
+    return cli(args, standalone_mode=False) # pylint: disable=no-value-for-parameter,unexpected-keyword-arg

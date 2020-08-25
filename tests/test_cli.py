@@ -22,34 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from os import path, chdir
-import subprocess
-from subprocess import call, check_output
-from textwrap import dedent
-import sys
+from tests.conftest import yasha_cli, wrap
+from yasha.cli import cli
+
+from subprocess import run, PIPE
+from pathlib import Path
+from typing import List
 
 import pytest
-from yasha.cli import cli
 from click.testing import CliRunner
-
-
-def wrap(text):
-    return dedent(text).lstrip()
-
-
-PY2 = True if sys.version_info[0] == 2 else False
-
-
-@pytest.fixture(params=('json', 'yaml', 'yml', 'toml'))
-def vartpl(request):
-    template = {
-        'json': '{{"int": {int}}}',
-        'yaml': 'int: {int}',
-        'yml': 'int: {int}',
-        'toml': 'int={int}',
-    }
-    fmt = request.param  # format
-    return (template[fmt], fmt)
+from click.exceptions import ClickException
 
 
 @pytest.fixture(params=('json', 'yaml', 'yml', 'toml', 'ini', 'csv', 'csv_with_header'))
@@ -195,49 +177,78 @@ def testdata(request):
     return data[fmt]
 
 
-def test_explicit_variable_file(tmpdir, testdata):
-    template, expected_output, data, extension = testdata
-    tpl = tmpdir.join('template.j2')
-    tpl.write(template)
-    datafile = tmpdir.join('data.{}'.format(extension))
-    datafile.write(data)
+def test_cli_direct(with_tmp_path):
+    "minimally test the yasha cli when imported and called as a function"
+    Path('data.json').write_text('{"foo": "bar"}')
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
 
-    runner = CliRunner()
-    result = runner.invoke(cli, ['-v', str(datafile), str(tpl)])
+    yasha_cli('-v data.json template.j2')
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == 'The value of foo is bar.'
+
+
+def test_cli_runner(with_tmp_path):
+    "minimally test the yasha cli when imported and called with click.testing.CliRunner"
+    Path('data.json').write_text('{"foo": "bar"}')
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
+
+    result = CliRunner().invoke(cli, '-v data.json template.j2')
     assert result.exit_code == 0
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == 'The value of foo is bar.'
 
-    output = tmpdir.join('template')
-    assert output.read() == expected_output
+
+def test_cli_entrypoint(with_tmp_path):
+    "minimally test the yasha cli when called as a command-line binary"
+    Path('data.json').write_text('{"foo": "bar"}')
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
+
+    run('yasha -v data.json template.j2', shell=True, stdout=PIPE, stderr=PIPE)
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == 'The value of foo is bar.'
 
 
-def test_two_explicitly_given_variables_files(tmpdir):
+def test_explicit_variable_file(testdata: List[str], with_tmp_path):
+    template, expected_output, data, extension = testdata
+    Path(f'data.{extension}').write_text(data)
+    Path('template.j2').write_text(template)
+
+    yasha_cli(f'-v data.{extension} template.j2')
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == expected_output
+
+
+def test_two_explicitly_given_variables_files(with_tmp_path):
     # Template to calculate a + b + c:
-    tpl = tmpdir.join('template.j2')
-    tpl.write('{{ a + b + c }}')
+    Path('template.j2').write_text('{{ a + b + c }}')
 
     # First variable file defines a & b:
-    a = tmpdir.join('a.yaml')
-    a.write('a: 1\nb: 100')
+    Path('a.yaml').write_text('a: 1\nb: 100')
 
     # Second variable file redefines b & defines c:
-    b = tmpdir.join('b.toml')
-    b.write('b = 2\nc = 3')
+    Path('b.toml').write_text('b = 2\nc = 3')
 
-    runner = CliRunner()
-    result = runner.invoke(cli, ['-v', str(a), '-v', str(b), str(tpl)])
-    assert result.exit_code == 0
+    yasha_cli('-v a.yaml -v b.toml template.j2')
 
-    output = tmpdir.join('template')
-    assert output.read() == '6'  # a + b + c = 1 + 2 + 3 = 6
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == '6'  # a + b + c = 1 + 2 + 3 = 6
 
 
-def test_variable_file_lookup(tmpdir, vartpl):
+def test_variable_file_lookup(with_tmp_path):
     # /cwd
     #   /sub
     #     foo.c.j2
-    cwd = tmpdir.chdir()
-    tpl = tmpdir.mkdir('sub').join('foo.c.j2')
-    tpl.write('int x = {{ int }};')
+    Path('sub').mkdir()
+    Path('sub/foo.c.j2').write_text('int x = {{ int }};')
 
     # /cwd
     #   /sub
@@ -246,206 +257,187 @@ def test_variable_file_lookup(tmpdir, vartpl):
     #     foo.json      int = 1
     #   foo.json        int = 0
     for i, varfile in enumerate(('foo', 'sub/foo', 'sub/foo.c')):
-        varfile += '.' + vartpl[1]
-        varfile = tmpdir.join(varfile)
-        varfile.write(vartpl[0].format(int=i))
+        Path(f'{varfile}.json').write_text(f'{{"int": {i}}}')
 
-        runner = CliRunner()
-        result = runner.invoke(cli, ['sub/foo.c.j2'])
-        assert result.exit_code == 0
-        assert path.isfile('sub/foo.c')
+        yasha_cli('sub/foo.c.j2')
 
-        output = tmpdir.join('sub/foo.c')
-        assert output.read() == 'int x = {};'.format(i)
+        output = Path('sub/foo.c')
+        assert output.is_file()
+        assert output.read_text() == f'int x = {i};'
 
 
-def test_custom_xmlparser(tmpdir):
-    template = """
-    {% for p in persons %}
-    [[persons]]
-    name = "{{ p.name }}"
-    address = "{{ p.address }}"
-    {% endfor %}"""
+def test_custom_xmlparser(with_tmp_path):
+    Path('foo.toml.jinja').write_text(wrap("""
+        {% for p in persons %}
+        [[persons]]
+        name = "{{ p.name }}"
+        address = "{{ p.address }}"
+        {% endfor %}"""))
+    Path('foo.xml').write_text(wrap("""
+        <persons>
+            <person>
+                <name>Foo</name>"
+                <address>Foo Valley</address>
+            </person>
+            <person>
+                <name>Bar</name>
+                <address>Bar Valley</address>
+            </person>
+        </persons>
+        """))
+    Path('foo.j2ext').write_text(wrap("""
+        def parse_xml(file):
+            import xml.etree.ElementTree as et
+            tree = et.parse(file.name)
+            root = tree.getroot()
+            variables = {"persons": []}
+            for elem in root.iter("person"):
+                variables["persons"].append({
+                    "name": elem.find("name").text,
+                    "address": elem.find("address").text,
+                })
+            return variables
+            """))
 
-    variables = """
-    <persons>
-        <person>
-            <name>Foo</name>"
-            <address>Foo Valley</address>
-        </person>
-        <person>
-            <name>Bar</name>
-            <address>Bar Valley</address>
-        </person>
-    </persons>
-    """
+    yasha_cli('foo.toml.jinja')
 
-    extensions = """
-def parse_xml(file):
-    import xml.etree.ElementTree as et
-    tree = et.parse(file.name)
-    root = tree.getroot()
-    variables = {"persons": []}
-    for elem in root.iter("person"):
-        variables["persons"].append({
-            "name": elem.find("name").text,
-            "address": elem.find("address").text,
-        })
-    return variables
-    """
-
-    cwd = tmpdir.chdir()
-
-    file = tmpdir.join("foo.xml")
-    file.write(variables)
-
-    file = tmpdir.join("foo.toml.jinja")
-    file.write(template)
-
-    file = tmpdir.join("foo.j2ext")
-    file.write(extensions)
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ['foo.toml.jinja'])
-    assert result.exit_code == 0
-    assert path.isfile("foo.toml")
-
-    o = tmpdir.join("foo.toml")
-    assert o.read() == """
-    [[persons]]
-    name = "Foo"
-    address = "Foo Valley"
-    [[persons]]
-    name = "Bar"
-    address = "Bar Valley"\n"""
+    output = Path('foo.toml')
+    assert output.is_file()
+    assert output.read_text() == wrap("""
+        [[persons]]
+        name = "Foo"
+        address = "Foo Valley"
+        [[persons]]
+        name = "Bar"
+        address = "Bar Valley"\n""")
 
 
-def test_broken_extensions(tmpdir):
-    from subprocess import CalledProcessError, STDOUT
-    tmpdir.chdir()
+def test_extensions(with_tmp_path):
+    Path("foo.j2").write_text("The value of foo is {{ foo | filterfoo }}")
+    Path('foo.json').write_text('{"foo": "bar"}')
+    Path("foo.j2ext").write_text(wrap("""
+        FILTERS = {
+            'filterfoo': lambda s: s.upper()
+        }"""))
 
-    extensions = """def foo()
-    return "foo"
-    """
-
-    tpl = tmpdir.join("foo.jinja")
-    tpl.write("")
-
-    ext = tmpdir.join("foo.j2ext")
-    ext.write(extensions)
-
-    runner = CliRunner()
-    result = runner.invoke(cli, ['foo.jinja'])
-    assert result.exit_code == 1
-    assert result.exception
-    assert "Invalid syntax (foo.j2ext, line 1)" in result.stdout
+    yasha_cli('foo.j2')
+    output = Path('foo')
+    assert output.is_file()
+    assert output.read_text() == "The value of foo is BAR"
 
 
-def test_broken_extensions_name_error(tmpdir):
-    from subprocess import CalledProcessError, STDOUT
-    tmpdir.chdir()
+def test_broken_extensions_syntaxerror(with_tmp_path):
+    Path("foo.j2").write_text("")
+    Path("foo.j2ext").write_text(wrap("""
+        def foo()
+        return 'foo'"""))
 
-    extensions = "asd"
+    with pytest.raises(ClickException) as exc_info:
+        yasha_cli('foo.j2')
 
-    tpl = tmpdir.join("foo.jinja")
-    tpl.write("")
+    assert exc_info.value.exit_code == 1
+    assert "Unable to load extensions\nInvalid syntax (foo.j2ext, line 1)" in exc_info.value.message
 
-    ext = tmpdir.join("foo.j2ext")
-    ext.write(extensions)
 
-    runner = CliRunner()
-    result = runner.invoke(cli, ['foo.jinja'])
-    assert result.exit_code == 1
-    assert result.exception
-    assert "name 'asd' is not defined" in result.stdout
+def test_broken_extensions_nameerror(with_tmp_path):
+    Path("foo.j2").write_text("")
+    Path("foo.j2ext").write_text(wrap("""
+        print(asd)"""))
+
+    with pytest.raises(ClickException) as exc_info:
+        yasha_cli('foo.j2')
+
+    assert exc_info.value.exit_code == 1
+    assert "Unable to load extensions, name 'asd' is not defined" in exc_info.value.message
 
 
 def test_render_template_from_stdin_to_stdout():
-    cmd = r'echo {{ foo }} | yasha --foo=bar -'
-    out = check_output(cmd, shell=True)
+    out = run('yasha --foo=bar -', shell=True, input=b'{{ foo }}', stdout=PIPE).stdout
     assert out == b'bar'
 
 
-def test_json_template(tmpdir):
+def test_json_template(with_tmp_path, capfd):
     """gh-34, and gh-35"""
-    tmpdir.chdir()
 
-    tmpl = tmpdir.join('template.json')
-    tmpl.write('{"foo": {{\'"%s"\'|format(bar)}}}')
+    Path('template.json').write_text('{"foo": {{\'"%s"\'|format(bar)}}}')
 
-    out = check_output(('yasha', '--bar=baz', '-o-', 'template.json'))
-    assert out == b'{"foo": "baz"}'
+    yasha_cli('--bar=baz -o- template.json')
+    out, _ = capfd.readouterr()
+    assert out == '{"foo": "baz"}'
 
 
-def test_mode_is_none():
+def test_undefined_var_when_mode_is_none(with_tmp_path):
     """gh-42, and gh-44"""
-    cmd = r'echo {{ foo }} | yasha -'
-    out = check_output(cmd, shell=True)
-    assert out == b''
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
+
+    yasha_cli(['template.j2'])
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == 'The value of foo is .'
 
 
-def test_mode_is_pedantic():
+def test_undefined_var_when_mode_is_pedantic(with_tmp_path):
     """gh-42, and gh-48"""
-    with pytest.raises(subprocess.CalledProcessError) as err:
-        cmd = r'echo {{ foo }} | yasha --mode=pedantic -'
-        out = check_output(cmd, shell=True, stderr=subprocess.STDOUT)
-    out = err.value.output
-    assert out == b"Error: Variable 'foo' is undefined\n"
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
+
+    with pytest.raises(ClickException) as exc_info:
+        yasha_cli('--mode=pedantic template.j2')
+    
+    assert exc_info.value.message == "Variable 'foo' is undefined"
 
 
-def test_mode_is_debug():
+def test_undefined_var_when_mode_is_debug(with_tmp_path):
     """gh-44"""
-    cmd = r'echo {{ foo }} | yasha --mode=debug -'
-    out = check_output(cmd, shell=True)
-    assert out == b'{{ foo }}'
+    Path('template.j2').write_text('The value of foo is {{ foo }}.')
+
+    yasha_cli('--mode=debug template.j2')
+    
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == 'The value of foo is {{ foo }}.'
 
 
-def test_template_syntax_for_latex(tmpdir):
+def test_template_syntax_for_latex(with_tmp_path):
     """gh-43"""
-    template = r"""
-\begin{itemize}
-<% for x in range(0, 3) %>
-    \item Counting: << x >>
-<% endfor %>
-\end{itemize}
-"""
+    Path('template.tex').write_text(wrap(r"""
+        \begin{itemize}
+        <% for x in range(0, 3) %>
+            \item Counting: << x >>
+        <% endfor %>
+        \end{itemize}
+        """))
 
-    extensions = r"""
-BLOCK_START_STRING = '<%'
-BLOCK_END_STRING = '%>'
-VARIABLE_START_STRING = '<<'
-VARIABLE_END_STRING = '>>'
-COMMENT_START_STRING = '<#'
-COMMENT_END_STRING = '#>'
-"""
+    Path('extensions.py').write_text(wrap("""
+        BLOCK_START_STRING = '<%'
+        BLOCK_END_STRING = '%>'
+        VARIABLE_START_STRING = '<<'
+        VARIABLE_END_STRING = '>>'
+        COMMENT_START_STRING = '<#'
+        COMMENT_END_STRING = '#>'
+        """))
 
-    expected_output = r"""
-\begin{itemize}
-    \item Counting: 0
-    \item Counting: 1
-    \item Counting: 2
-\end{itemize}
-"""
+    expected_output = wrap(r"""
+        \begin{itemize}
+            \item Counting: 0
+            \item Counting: 1
+            \item Counting: 2
+        \end{itemize}
+        """)
 
-    tpl = tmpdir.join('template.tex')
-    tpl.write(template)
-
-    ext = tmpdir.join('extensions.py')
-    ext.write(extensions)
-
-    out = check_output(('yasha', '--keep-trailing-newline', '-e', str(ext), '-o-', str(tpl)))
+    # This test needs to run in a subprocess until the following issue is fixed:
+    # https://github.com/kblomqvist/yasha/issues/67
+    out = run('yasha --keep-trailing-newline -e extensions.py -o- template.tex', shell=True, stdout=PIPE).stdout
     assert out.decode() == expected_output
 
 
-def test_extensions_file_with_do(tmpdir):
+def test_extensions_file_with_do(with_tmp_path):
     """gh-52"""
-    tmpdir.chdir()
+    Path('extensions.py').write_text('from jinja2.ext import do')
+    Path('template.j2').write_text(r'{% set list = [1, 2, 3] %}{% do list.append(4) %}{{ list }}')
 
-    extensions = tmpdir.join('extensions.py')
-    extensions.write('from jinja2.ext import do')
+    yasha_cli('-e extensions.py template.j2')
 
-    tmpl = tmpdir.join('template.j2')
-    tmpl.write(r'{% set list = [1, 2, 3] %}{% do list.append(4) %}{{ list }}')
-
-    out = check_output(('yasha', '-e', str(extensions), '-o-', str(tmpl)))
-    assert out == b'[1, 2, 3, 4]'
+    output = Path('template')
+    assert output.is_file()
+    assert output.read_text() == '[1, 2, 3, 4]'

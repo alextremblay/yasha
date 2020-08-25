@@ -22,24 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from sys import stderr, stdout
 from yasha.yasha import ENCODING
-from yasha.cli import cli
-import sys
+from tests.conftest import yasha_cli, wrap
+
 from subprocess import run, PIPE
-from os import path, chdir
-from textwrap import dedent
+from os import chdir
+from pathlib import Path
+from shutil import copytree
 
 import pytest
 
-SCRIPT_PATH = path.dirname(path.realpath(__file__))
-
-def wrap(text):
-    return dedent(text).lstrip()
-
-
-def yasha_cli(args):
-    return cli(args, standalone_mode=False) # pylint: disable=no-value-for-parameter,unexpected-keyword-arg
 
 build_dependencies = (
     'foo.c.jinja',
@@ -51,18 +43,19 @@ build_dependencies = (
 
 
 @pytest.mark.slowtest
-def test_scons():
+def test_scons(with_tmp_path, fixtures_dir):
     # This test is an end-to-end test of the entire SCons build system, including the yasha.scons component we need to test, 
     # and including the entire Clang build toolchain. It should be rewritten to be a unit test of yasha.scons by someone who 
     # knows how to write SCons CBuilder unit tests
     pytest.importorskip("scons", reason="SCons not installed")
-    chdir(SCRIPT_PATH + '/fixtures/c_project')
+    c_project = fixtures_dir / 'c_project'
+    copytree(c_project, with_tmp_path)
     build_cmd = ('scons', '-Q')
 
     # First build
     out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
     assert not 'is up to date' in out
-    assert path.isfile('build/a.out')
+    assert Path('build/a.out').is_file()
 
     # Immediate new build shouldn't do anything
     out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
@@ -74,28 +67,27 @@ def test_scons():
 
     # FIXME: Sometimes the rebuild happens sometimes not.
     for dep in build_dependencies:
-        run(('touch', path.join('src', dep)), stdout=PIPE, encoding=ENCODING)
+        run(('touch', Path('src').joinpath(dep)), stdout=PIPE, encoding=ENCODING)
         out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
         #assert not b'is up to date' in out
         print(out) # For debugging purposes, run 'pytest -s -k scons'
-    run(('scons', '-c'))
-    run(('scons', '-C', 'src', '-c'))
 
 
 @pytest.mark.slowtest
-def test_scons_without_build_dir():
+def test_scons_without_build_dir(with_tmp_path, fixtures_dir):
     # This test is an end-to-end test of the entire SCons build system, including the yasha.scons component we need to test, 
     # and including the entire Clang build toolchain. It should be rewritten to be a unit test of yasha.scons by someone who 
     # knows how to write SCons CBuilder unit tests
     pytest.importorskip("scons", reason="SCons not installed")
-    chdir(SCRIPT_PATH + '/fixtures/c_project')
+    c_project = fixtures_dir / 'c_project'
+    copytree(c_project, with_tmp_path)
     chdir('src')
     build_cmd = ('scons', '-Q')
 
     # First build
     out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
     assert not 'is up to date' in out
-    assert path.isfile('a.out')
+    assert Path('a.out').is_file()
 
     # Immediate new build shouldn't do anything
     out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
@@ -111,59 +103,45 @@ def test_scons_without_build_dir():
         out = run(build_cmd, stdout=PIPE, encoding=ENCODING).stdout
         #assert not b'is up to date' in out
         print(out) # for debugging, run 'pytest -s -k scons'
-    run(('scons', '-c'))
-    run(('scons', '-C', 'src', '-c'))  
 
 
-def test_makefile_dependency_flag_m(tmpdir, capfd):
-    template = wrap("""
+def test_makefile_dependency_flag_m(with_tmp_path, capfd):
+    Path('foo.json').write_text('{"foo": "bar"}')
+    Path("foo.c.jinja").write_text(wrap("""
         {% include "header.j2inc" %}
 
         void foo() {
             char foo[] = "{{ foo }}";
             printf("%s has %d chars ...\\n", foo, {{ foo|length }});
-        }""")
-
-    variables = 'foo = "bar"'
-    j2inc = wrap("""
+        }"""))
+    Path("header.j2inc").write_text(wrap("""
         #include <stdio.h>
-        #include "foo.h" """)
-
-    tmpdir.chdir()
-    tmpdir.join("foo.toml").write(variables)
-    tmpdir.join("foo.c.jinja").write(template)
-    tmpdir.join("header.j2inc").write(j2inc)
+        #include "foo.h" """))
 
     yasha_cli(['-M', 'foo.c.jinja'])
     captured_output, _ = capfd.readouterr()
-    assert captured_output == 'foo.c: foo.c.jinja foo.toml header.j2inc\n'
+    assert captured_output == 'foo.c: foo.c.jinja foo.json header.j2inc\n'
 
 
-def test_makefile_dependency_flag_md(tmpdir):
-    template = wrap("""
+def test_makefile_dependency_flag_md(with_tmp_path):
+    Path('foo.json').write_text('{"foo": "bar"}')
+    Path("foo.c.jinja").write_text(wrap("""
         {% include "header.j2inc" %}
 
         void foo() {
             char foo[] = "{{ foo }}";
             printf("%s has %d chars ...\\n", foo, {{ foo|length }});
-        }""")
-
-    variables = 'foo = "bar"'
-    j2inc = wrap("""
+        }"""))
+    Path("header.j2inc").write_text(wrap("""
         #include <stdio.h>
-        #include "foo.h" """)
-
-    tmpdir.chdir()
-    tmpdir.join("foo.toml").write(variables)
-    tmpdir.join("foo.c.jinja").write(template)
-    tmpdir.join("header.j2inc").write(j2inc)
+        #include "foo.h" """))
 
     yasha_cli(['-MD', 'foo.c.jinja'])
-    assert path.isfile("foo.c.d")
-    assert tmpdir.join("foo.c.d").read() == 'foo.c: foo.c.jinja foo.toml header.j2inc\n'
+    assert Path("foo.c.d").is_file()
+    assert Path("foo.c.d").read_text() == 'foo.c: foo.c.jinja foo.json header.j2inc\n'
     
-    assert path.isfile("foo.c")
-    assert tmpdir.join("foo.c").read() == wrap("""
+    assert Path("foo.c")
+    assert Path("foo.c").read_text() == wrap("""
         #include <stdio.h>
         #include "foo.h" 
         void foo() {

@@ -22,75 +22,60 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+from tests.conftest import yasha_cli, wrap
+
 import os
-import sys
-import subprocess
+from pathlib import Path
 
 import pytest
-
-requires_py3 = pytest.mark.skipif(sys.version_info < (3,5),
-                                  reason="Requires Python >= 3.5")
-
-def check_output(*args, **kwargs):
-    params = dict(
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-        timeout=2,
-    )
-    if 'stdin' in kwargs:
-        stdin = kwargs['stdin']
-        params['input'] = stdin.encode() if stdin else None
-
-    if sys.version_info < (3, 5):
-        return (subprocess.check_output(args), 0)
-    else:
-        cp = subprocess.run(args, **params)
-        return (cp.stdout, cp.returncode)
+from click import ClickException
 
 
-def test_env(tmpdir):
-    template = tmpdir.join('template.j2')
-    template.write("{{ 'POSTGRES_URL' | env('postgresql://localhost') }}")
+def test_env(with_tmp_path):
+    Path('template.j2').write_text("{{ 'POSTGRES_URL' | env('postgresql://localhost') }}")
 
-    out, retcode = check_output('yasha', str(template), '-o-')
-    assert out == b'postgresql://localhost'
+    yasha_cli('template.j2')
+    
+    assert Path('template').read_text() == 'postgresql://localhost'
 
     os.environ['POSTGRES_URL'] = 'postgresql://127.0.0.1'
-    out, retcode = check_output('yasha', str(template), '-o-')
-    assert out == b'postgresql://127.0.0.1'
+    yasha_cli('template.j2')
+    assert Path('template').read_text() == 'postgresql://127.0.0.1'
 
 
-@requires_py3
-def test_shell():
-    template = '{{ "uname" | shell }}'
-    out, retcode = check_output('yasha', '-', stdin=template)
-    assert out.decode() == os.uname().sysname
+
+def test_shell(with_tmp_path):
+    Path('template.j2').write_text('{{ "uname" | shell }}')
+    
+    yasha_cli('template.j2')
+
+    assert Path('template').read_text() == os.uname().sysname
 
 
-@requires_py3
 def test_subprocess():
-    template = (
-        '{% set r = "uname" | subprocess %}'
-        '{{ r.stdout.decode() }}'
-    )
-    out, retcode = check_output('yasha', '-', stdin=template)
-    assert out.decode().strip() == os.uname().sysname
+    Path('template.j2').write_text(wrap("""
+        {% set r = "uname" | subprocess %}
+        {{ r.stdout.decode() }}"""))
+
+    yasha_cli('template.j2')
+
+    assert Path('template').read_text().strip() == os.uname().sysname
 
 
-@requires_py3
 def test_subprocess_with_unknown_cmd():
-    template = '{{ "unknown_cmd" | subprocess }}'
-    out, retcode = check_output('yasha', '-', stdin=template)
-    assert retcode != 0
-    assert b'not found' in out
+    Path('template.j2').write_text('{{ "unknown_cmd" | subprocess }}')
+
+    with pytest.raises(ClickException) as e:
+        yasha_cli('template.j2')
+
+    assert 'command not found' in e.value.message
 
 
-@requires_py3
 def test_subprocess_with_unknown_cmd_while_check_is_false():
-    template = (
-        '{% set r = "unknown_cmd" | subprocess(check=False) %}'
-        '{{ r.returncode > 0 }}'
-    )
-    out, retcode = check_output('yasha', '-', stdin=template)
-    assert out == b'True'
+    Path('template.j2').write_text(wrap("""
+        {% set r = "unknown_cmd" | subprocess(check=False) %}
+        {{ r.returncode > 0 }}"""))
+
+    yasha_cli('template.j2')
+
+    assert Path('template').read_text().strip() == 'True'
