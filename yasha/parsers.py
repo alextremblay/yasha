@@ -24,7 +24,7 @@ THE SOFTWARE.
 """
 import sys
 
-from .yasha import ENCODING
+from yasha import ENCODING
 
 def parse_json(file):
     import json

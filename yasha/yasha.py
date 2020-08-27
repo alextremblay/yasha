@@ -23,14 +23,13 @@ THE SOFTWARE.
 """
 
 import os
-import ast
-import csv
+
 import jinja2 as jinja
-
-__version__ = "dev"
-
-ENCODING = 'utf-8'
-EXTENSION_FILE_FORMATS = ('.py', '.yasha', '.j2ext', '.jinja-ext')
+from .tests import TESTS
+from .filters import FILTERS
+from .classes import CLASSES
+from .parsers import PARSERS
+from click import ClickException
 
 def find_template_companion(template, extension='', check=True):
     """
@@ -96,37 +95,6 @@ def find_referenced_templates(template, search_path):
     return [realpath(t) for t in referenced_templates if t is not None]
 
 
-def parse_cli_variables(args):
-    variables = dict()
-    for i, arg in enumerate(args):
-        if arg[:2] != '--':
-            continue
-        if '=' in arg:
-            opt, val = arg[2:].split('=', 1)
-        else:
-            try:
-                if args[i+1] != '--':
-                    opt = arg[2:]
-                    val = args[i+1]
-            except IndexError:
-                break
-        try:
-            val = ast.literal_eval(val)
-        except ValueError:
-            pass
-        except SyntaxError:
-            pass
-        if isinstance(val, str):
-            # Convert foo,bar,baz to list ['foo', 'bar', 'baz'] and
-            # '"foo,bar,baz"' to string 'foo,bar,baz'
-            reader = csv.reader([val], delimiter=',', quotechar='"')
-            val = list(reader)[0]
-            if len(val) == 1:
-                val = val[0]
-        variables[opt] = val
-    return variables
-
-
 def load_jinja(
         path, tests, filters, classes, mode,
         trim_blocks, lstrip_blocks, keep_trailing_newline):
@@ -162,3 +130,87 @@ def load_jinja(
     env.tests.update(tests)
     env.filters.update(filters)
     return env
+
+
+def parse_variable_file(file):
+    try:
+        file_extension = os.path.splitext(file.name)[1]
+        return PARSERS[file_extension](file)
+    except AttributeError:
+        return dict()
+    except KeyError:
+        error = "Unkown variable file extension '{}'"
+        raise ClickException(error.format(file_extension))
+
+def load_python_module(file):
+    try:
+        from importlib.machinery import SourceFileLoader
+        loader = SourceFileLoader('yasha_extensions', file.name)
+        module = loader.load_module()
+    except ImportError:  # Fallback to Python2
+        import imp
+        with open(file.name) as f:
+            desc = (".py", "rb", imp.PY_SOURCE)
+            module = imp.load_module('yasha_extensions', f, file.name, desc)
+        pass
+    return module
+
+def load_extensions(file):
+    from jinja2.ext import Extension
+    import inspect
+
+    tests   = dict()
+    filters = dict()
+    parsers = dict()
+    classes = []
+
+    try:
+        module = load_python_module(file)
+    except NameError as e:
+        msg = 'Unable to load extensions, {}'
+        raise ClickException(msg.format(e))
+    except SyntaxError as e:
+        msg = "Unable to load extensions\n{} ({}, line {})"
+        error = e.msg[0].upper() + e.msg[1:]
+        filename = os.path.relpath(e.filename)
+        raise ClickException(msg.format(error, filename, e.lineno))
+
+    for attr in [getattr(module, x) for x in dir(module)]:
+        if inspect.isfunction(attr):
+            if attr.__name__.startswith('test_'):
+                name = attr.__name__[5:]
+                tests[name] = attr
+            if attr.__name__.startswith('filter_'):
+                name = attr.__name__[7:]
+                filters[name] = attr
+            if attr.__name__.startswith('parse_'):
+                name = attr.__name__[6:]
+                parsers['.' + name] = attr
+        if inspect.isclass(attr):
+            if issubclass(attr, Extension):
+                classes.append(attr)
+
+    import jinja2.defaults
+    for name, obj in inspect.getmembers(module):
+        if name in tuple(x for x in dir(jinja2.defaults) if x.isupper()):
+            setattr(jinja2.defaults, name, obj)
+
+    try:
+        TESTS.update(module.TESTS)
+    except AttributeError:
+        TESTS.update(tests)
+
+    try:
+        FILTERS.update(module.FILTERS)
+    except AttributeError:
+        FILTERS.update(filters)
+
+    try:
+        PARSERS.update(module.PARSERS)
+    except AttributeError:
+        PARSERS.update(parsers)
+
+    try:
+        CLASSES.extend(module.CLASSES)
+    except AttributeError:
+        CLASSES.extend(classes)

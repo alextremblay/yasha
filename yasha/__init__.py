@@ -22,3 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 """
+__version__ = "dev"
+
+ENCODING = 'utf-8'
+EXTENSION_FILE_FORMATS = ('.py', '.yasha', '.j2ext', '.jinja-ext')

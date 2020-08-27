@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from yasha.yasha import ENCODING
+from yasha import ENCODING
 from tests.conftest import yasha_cli, wrap
 
 from subprocess import run, PIPE
