@@ -436,7 +436,7 @@ def test_extensions_file_with_do(with_tmp_path):
     Path('extensions.py').write_text('from jinja2.ext import do')
     Path('template.j2').write_text(r'{% set list = [1, 2, 3] %}{% do list.append(4) %}{{ list }}')
 
-    yasha_cli('-e extensions.py template.j2')
+    run('yasha -e extensions.py template.j2', shell=True)
 
     output = Path('template')
     assert output.is_file()

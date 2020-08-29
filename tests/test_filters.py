@@ -52,7 +52,7 @@ def test_shell(with_tmp_path):
     assert Path('template').read_text() == os.uname().sysname
 
 
-def test_subprocess():
+def test_subprocess(with_tmp_path):
     Path('template.j2').write_text(wrap("""
         {% set r = "uname" | subprocess %}
         {{ r.stdout.decode() }}"""))
@@ -62,7 +62,7 @@ def test_subprocess():
     assert Path('template').read_text().strip() == os.uname().sysname
 
 
-def test_subprocess_with_unknown_cmd():
+def test_subprocess_with_unknown_cmd(with_tmp_path):
     Path('template.j2').write_text('{{ "unknown_cmd" | subprocess }}')
 
     with pytest.raises(ClickException) as e:
@@ -71,7 +71,7 @@ def test_subprocess_with_unknown_cmd():
     assert 'command not found' in e.value.message
 
 
-def test_subprocess_with_unknown_cmd_while_check_is_false():
+def test_subprocess_with_unknown_cmd_while_check_is_false(with_tmp_path):
     Path('template.j2').write_text(wrap("""
         {% set r = "unknown_cmd" | subprocess(check=False) %}
         {{ r.returncode > 0 }}"""))

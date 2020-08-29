@@ -22,8 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from _pytest.outcomes import importorskip
-from tests.conftest import with_tmp_path, yasha_cli, wrap
+from tests.conftest import yasha_cli
 
 from pathlib import Path
 
