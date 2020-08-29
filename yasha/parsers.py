@@ -2,6 +2,7 @@
 The MIT License (MIT)
 
 Copyright (c) 2015-2020 Kim Blomqvist
+Portions Copyright (c) 2020 Alex Tremblay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,37 +24,38 @@ THE SOFTWARE.
 
 """
 import sys
+from pathlib import Path
 
-from yasha import ENCODING
+from yasha.constants import ENCODING
 
-def parse_json(file):
+def parse_json(file: Path):
     import json
-    assert file.name.endswith('.json')
-    variables = json.loads(file.read().decode(ENCODING))
+    assert file.suffix == '.json'
+    variables = json.loads(file.read_text(ENCODING))
     return variables if variables else dict()
 
-def parse_yaml(file):
+def parse_yaml(file: Path):
     import yaml
-    assert file.name.endswith(('.yaml', '.yml'))
-    variables = yaml.safe_load(file)
+    assert file.suffix in ('.yaml', '.yml')
+    variables = yaml.safe_load(file.read_text(ENCODING))
     return variables if variables else dict()
 
-def parse_toml(file):
+def parse_toml(file: Path):
     import pytoml as toml
-    assert file.name.endswith('.toml')
-    variables = toml.load(file)
+    assert file.suffix == '.toml'
+    variables = toml.loads(file.read_text(ENCODING))
     return variables if variables else dict()
 
-def parse_xml(file):
+def parse_xml(file: Path):
     import xmltodict
-    assert file.name.endswith('.xml')
-    variables = xmltodict.parse(file.read().decode(ENCODING))
+    assert file.suffix == '.xml'
+    variables = xmltodict.parse(file.read_text(ENCODING))
     return variables if variables else dict()
 
-def parse_svd(file):
+def parse_svd(file: Path):
     # TODO: To be moved into its own repo
     from .cmsis import SVDFile
-    svd = SVDFile(file)
+    svd = SVDFile(file.read_text(ENCODING))
     svd.parse()
     return {
         "cpu": svd.cpu,
@@ -62,11 +64,11 @@ def parse_svd(file):
     }
 
 
-def parse_ini(file):
+def parse_ini(file: Path):
     from configparser import ConfigParser
     cfg = ConfigParser()
     # yasha opens files in binary mode, configparser expects files in text mode
-    content = file.read().decode(ENCODING)
+    content = file.read_text(ENCODING)
     cfg.read_string(content)
     result = dict(cfg)
     for section, data in result.items():
@@ -74,13 +76,12 @@ def parse_ini(file):
     return result
 
 
-def parse_csv(file):
+def parse_csv(file: Path):
     from csv import reader, DictReader, Sniffer
-    from io import TextIOWrapper
-    from os.path import basename, splitext
-    assert file.name.endswith('.csv')
-    name = splitext(basename(file.name))[0]  # get the filename without the extension
-    content = TextIOWrapper(file, encoding='utf-8', errors='replace')
+    from io import StringIO
+    assert file.suffix == '.csv'
+    name = file.stem
+    content = StringIO(file.read_text(ENCODING))
     sample = content.read(1024)
     content.seek(0)
     csv = list()

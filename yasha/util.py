@@ -23,6 +23,7 @@ THE SOFTWARE.
 """
 
 import os
+from pathlib import Path
 
 import jinja2 as jinja
 from .tests import TESTS
@@ -132,9 +133,9 @@ def load_jinja(
     return env
 
 
-def parse_variable_file(file):
+def parse_variable_file(file: Path):
     try:
-        file_extension = os.path.splitext(file.name)[1]
+        file_extension = file.suffix
         return PARSERS[file_extension](file)
     except AttributeError:
         return dict()

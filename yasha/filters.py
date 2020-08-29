@@ -27,7 +27,7 @@ import sys
 import subprocess
 
 from click import ClickException
-from yasha import ENCODING
+from yasha.constants import ENCODING
 
 def do_env(value, default=None):
     return os.environ.get(value, default)

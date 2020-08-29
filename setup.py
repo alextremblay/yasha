@@ -24,6 +24,7 @@ setup(
         "pytoml",
         "pyyaml",
         "xmltodict",
+        "typing_extensions;python_version<3.8"
     ],
     python_requires='>=3.6',
     entry_points='''

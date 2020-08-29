@@ -2,6 +2,7 @@
 The MIT License (MIT)
 
 Copyright (c) 2015-2020 Kim Blomqvist
+Portions Copyright (c) 2020 Alex Tremblay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,5 +25,3 @@ THE SOFTWARE.
 """
 __version__ = "dev"
 
-ENCODING = 'utf-8'
-EXTENSION_FILE_FORMATS = ('.py', '.yasha', '.j2ext', '.jinja-ext')

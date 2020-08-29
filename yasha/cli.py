@@ -2,6 +2,7 @@
 The MIT License (MIT)
 
 Copyright (c) 2015-2020 Kim Blomqvist
+Portions Copyright (c) 2020 Alex Tremblay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,16 +28,17 @@ import os
 import encodings
 import ast
 import csv
+from pathlib import Path
 
 import click
 from click import ClickException
 from jinja2.exceptions import UndefinedError as JinjaUndefinedError
 
-from yasha import yasha, __version__, ENCODING, EXTENSION_FILE_FORMATS
+from yasha import __version__, util, constants
 from yasha.tests import TESTS
-from .filters import FILTERS
-from .classes import CLASSES
-from .parsers import PARSERS
+from yasha.filters import FILTERS
+from yasha.classes import CLASSES
+from yasha.parsers import PARSERS
 
 def print_version(ctx, param, value):
     if not value or ctx.resilient_parsing:
@@ -83,9 +85,9 @@ def parse_cli_variables(args):
 @click.argument("template_variables", nargs=-1, type=click.UNPROCESSED)
 @click.argument("template", type=click.File("rb"))
 @click.option("--output", "-o", type=click.File("wb"), help="Place the rendered template into FILENAME.")
-@click.option("--variables", "-v", type=click.File("rb"), multiple=True, help="Read template variables from FILENAME. Built-in parsers are JSON, YAML, TOML and XML.")
+@click.option("--variables", "-v", type=click.Path(exists=True, dir_okay=False, path_type=str), multiple=True, help="Read template variables from FILENAME. Built-in parsers are JSON, YAML, TOML and XML.")
 @click.option("--extensions", "-e", envvar='YASHA_EXTENSIONS', type=click.File("rb"), help="Read template extensions from FILENAME. A Python file is expected.")
-@click.option("--encoding", "-c", default=ENCODING, help="Default is UTF-8.")
+@click.option("--encoding", "-c", default=constants.ENCODING, help="Default is UTF-8.")
 @click.option("--include_path", "-I", type=click.Path(exists=True, file_okay=False), multiple=True, help="Add DIRECTORY to the list of directories to be searched for the referenced templates.")
 @click.option("--no-variable-file", is_flag=True, help="Omit template variable file.")
 @click.option("--no-extension-file", is_flag=True, help="Omit template extension file.")
@@ -120,28 +122,28 @@ def cli(
     if encodings.search_function(encoding) is None:
         msg = "Unrecognized encoding name '{}'"
         raise ClickException(msg.format(encoding))
-    ENCODING = encoding
+    constants.ENCODING = encoding
 
     # Append include path of referenced templates
     include_path = [os.path.dirname(template.name)] + list(include_path)
 
     if not extensions or not variables:
-        template_companion = yasha.find_template_companion(template.name)
+        template_companion = util.find_template_companion(template.name)
         template_companion = list(template_companion)
 
     if not extensions and not no_extension_file:
         for file in template_companion:
-            if file.endswith(EXTENSION_FILE_FORMATS):
+            if file.endswith(constants.EXTENSION_FILE_FORMATS):
                 extensions = click.open_file(file, "rb")
                 break
 
     if extensions:
-        yasha.load_extensions(extensions)
+        util.load_extensions(extensions)
 
     if not variables and not no_variable_file:
         for file in template_companion:
             if file.endswith(tuple(PARSERS.keys())):
-                variables = (click.open_file(file, "rb"),)
+                variables = (file,)
                 break
 
     if not output:
@@ -154,10 +156,10 @@ def cli(
     if m or md:
         deps = [os.path.relpath(template.name)]
         for file in variables:
-            deps.append(os.path.relpath(file.name))
+            deps.append(os.path.relpath(file))
         if extensions:
             deps.append(os.path.relpath(extensions.name))
-        for d in yasha.find_referenced_templates(template, include_path):
+        for d in util.find_referenced_templates(template, include_path):
             deps.append(os.path.relpath(d))
 
         deps = os.path.relpath(output.name) + ": " + " ".join(deps)
@@ -167,10 +169,10 @@ def cli(
         if md:
             deps += os.linesep
             output_d = click.open_file(output.name + ".d", "wb")
-            output_d.write(deps.encode(ENCODING))
+            output_d.write(deps.encode(constants.ENCODING))
 
     # Load Jinja
-    jinja = yasha.load_jinja(
+    jinja = util.load_jinja(
         path=include_path,
         tests=TESTS,
         filters=FILTERS,
@@ -184,20 +186,20 @@ def cli(
     # Get template
     if template.name == "<stdin>":
         stdin = template.read()
-        t = jinja.from_string(stdin.decode(ENCODING))
+        t = jinja.from_string(stdin.decode(constants.ENCODING))
     else:
         t = jinja.get_template(os.path.basename(template.name))
 
     # Parse variables
     context = dict()
     for file in variables:
-        context.update(yasha.parse_variable_file(file))
+        context.update(util.parse_variable_file(Path(file)))
     context.update(parse_cli_variables(template_variables))
 
     # Finally render template and save it
     try:
         t_stream = t.stream(context)
         t_stream.enable_buffering(size=5)
-        t_stream.dump(output, encoding=ENCODING)
+        t_stream.dump(output, encoding=constants.ENCODING)
     except JinjaUndefinedError as e:
         raise ClickException("Variable {}".format(e))
