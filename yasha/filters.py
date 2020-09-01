@@ -25,6 +25,7 @@ THE SOFTWARE.
 import os
 import sys
 import subprocess
+from typing import Callable, Dict
 
 from click import ClickException
 from yasha.constants import ENCODING
@@ -63,7 +64,7 @@ def do_shell(cmd, strip=True, check=True, timeout=2):
     else:
         return result.stdout.decode(encoding=ENCODING).strip()
 
-FILTERS = {
+FILTERS: Dict[str, Callable] = {
     'env': do_env,
     'shell': do_shell,
     'subprocess': do_subprocess,

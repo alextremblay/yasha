@@ -23,4 +23,7 @@ THE SOFTWARE.
 
 """
 
-TESTS = dict()
+from typing import Any, Callable, Dict
+
+
+TESTS: Dict[str, Callable[[Any], bool]] = dict()

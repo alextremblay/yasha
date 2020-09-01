@@ -23,39 +23,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 """
-import sys
 from pathlib import Path
+from typing import Callable, Dict
 
 from yasha.constants import ENCODING
 
-def parse_json(file: Path):
+
+def parse_json(filepath: Path, encoding = ENCODING):
     import json
-    assert file.suffix == '.json'
-    variables = json.loads(file.read_text(ENCODING))
+    assert filepath.suffix == '.json'
+    variables = json.loads(filepath.read_text(encoding))
     return variables if variables else dict()
 
-def parse_yaml(file: Path):
+def parse_yaml(filepath: Path, encoding = ENCODING):
     import yaml
-    assert file.suffix in ('.yaml', '.yml')
-    variables = yaml.safe_load(file.read_text(ENCODING))
+    assert filepath.suffix in ('.yaml', '.yml')
+    variables = yaml.safe_load(filepath.read_text(encoding))
     return variables if variables else dict()
 
-def parse_toml(file: Path):
+def parse_toml(filepath: Path, encoding = ENCODING):
     import pytoml as toml
-    assert file.suffix == '.toml'
-    variables = toml.loads(file.read_text(ENCODING))
+    assert filepath.suffix == '.toml'
+    variables = toml.loads(filepath.read_text(encoding))
     return variables if variables else dict()
 
-def parse_xml(file: Path):
+def parse_xml(filepath: Path, encoding = ENCODING):
     import xmltodict
-    assert file.suffix == '.xml'
-    variables = xmltodict.parse(file.read_text(ENCODING))
+    assert filepath.suffix == '.xml'
+    variables = xmltodict.parse(filepath.read_text(encoding))
     return variables if variables else dict()
 
-def parse_svd(file: Path):
+def parse_svd(filepath: Path, encoding = ENCODING):
     # TODO: To be moved into its own repo
     from .cmsis import SVDFile
-    svd = SVDFile(file.read_text(ENCODING))
+    svd = SVDFile(filepath.read_text(encoding))
     svd.parse()
     return {
         "cpu": svd.cpu,
@@ -64,11 +65,11 @@ def parse_svd(file: Path):
     }
 
 
-def parse_ini(file: Path):
+def parse_ini(filepath: Path, encoding = ENCODING):
     from configparser import ConfigParser
     cfg = ConfigParser()
     # yasha opens files in binary mode, configparser expects files in text mode
-    content = file.read_text(ENCODING)
+    content = filepath.read_text(encoding)
     cfg.read_string(content)
     result = dict(cfg)
     for section, data in result.items():
@@ -76,12 +77,12 @@ def parse_ini(file: Path):
     return result
 
 
-def parse_csv(file: Path):
+def parse_csv(filepath: Path, encoding = ENCODING):
     from csv import reader, DictReader, Sniffer
     from io import StringIO
-    assert file.suffix == '.csv'
-    name = file.stem
-    content = StringIO(file.read_text(ENCODING))
+    assert filepath.suffix == '.csv'
+    name = filepath.stem
+    content = StringIO(filepath.read_text(encoding))
     sample = content.read(1024)
     content.seek(0)
     csv = list()
@@ -94,7 +95,7 @@ def parse_csv(file: Path):
     return {name: csv}
 
 
-PARSERS = {
+PARSERS: Dict[str, Callable] = {
     '.json': parse_json,
     '.yaml': parse_yaml,
     '.yml': parse_yaml,

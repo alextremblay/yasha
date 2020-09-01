@@ -23,4 +23,7 @@ THE SOFTWARE.
 
 """
 
-CLASSES = []
+from typing import List, Union
+from jinja2.ext import Extension
+
+CLASSES: List[Union[str, Extension]] = []
