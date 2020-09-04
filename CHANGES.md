@@ -5,11 +5,10 @@ Major release, unreleased
 
 - Dropped support for Python 2.7 and 3.5. Minimum required python version is 3.6.
 - Extensively refactored Yasha to allow use as a library, and to make use of new features and flexibility offered by python 3.6
-- Added support for a new function signature for custom file parsers inside extensions files:
-  The previous function signature was `parse_<ext>(file: typing.BinaryIO)`. The new function signature is `parse_<ext>(filepath: pathlib.Path, encoding: str = 'utf-8')`. Both signatures are supported, the old function signature will eventually be deprecated / removed
-- Added support for loading multiple extensions files
-- Added the ability to load extension files specified on the command line AND automatic-lookup files (previous versions only automatically looked up extensions files if no extensions files were specified on the command line)
-- Added the ability to load variable files specified on the command line AND automatic-lookup files (previous versions only automatically looked up variable files if no variable files were specified on the command line)
+- Added support for optional keyword argument `encoding` to be added to parser functions. Should default to 'utf-8'.
+- Added support for loading multiple extensions files.
+- Added the ability to load extension files specified on the command line AND automatic-lookup files (previous versions only automatically looked up extensions files if no extensions files were specified on the command line).
+- Added the ability to load variable files specified on the command line AND automatic-lookup files (previous versions only automatically looked up variable files if no variable files were specified on the command line).
 - Fixed Jinja 2.11.x compatibility issue (gh-60).
 - The option `--keep-trailing-newline` was removed in favor of making
   it default. The old behaviour can be achieved with the new option

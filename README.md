@@ -226,7 +226,7 @@ You can extend Yasha by custom Jinja [extensions](http://jinja.pocoo.org/docs/de
 yasha -e extensions.py -v variables.yaml template.j2
 ```
 
-Like for variable file, Yasha supports automatic extension file look up and sharing too. Having files like these in the current directory:
+Like for variable files, Yasha supports automatic extension file look up and sharing too. Having files like these in the current directory:
 
 ```
 template.j2
@@ -306,7 +306,9 @@ CLASSES = [
 
 ### Parsers
 
-If none of the built-in parsers fit into your needs, it's possible to declare your own parser within the extension file. Either create a function named as `parse_` + `<file extension>`, or define the parse-function in `PARSERS` dictionary with the key indicating the file extension. Yasha will then pass a `pthlib.Path` object representing the variable file for the function to be parsed and expects to get dictionary as a return value.
+If none of the built-in parsers fit into your needs, it's possible to declare your own parser within the extension file. Either create a function named as `parse_` + `<file extension>`, or define the parse-function in `PARSERS` dictionary with the key indicating the file extension. Yasha will then pass to the function a file-like object representing the variable file and an optional file encoding.
+The function is expected to return a dictionary of variables fro mthe file.
+Parser functions in extension files which have the same suffix as a built-in file parser (like for example `parse_xml` or `parse_json`) will override and replace the builtin parser.
 
 For example, below is shown an example XML file and a custom parser for that.
 
@@ -329,8 +331,8 @@ For example, below is shown an example XML file and a custom parser for that.
 import xml.etree.ElementTree as et
 
 def parse_xml(file):
-    assert file.suffix == '.xml'
-    tree = et.parse(file)
+    assert file.name.endswith('.xml') or file.name.endswith('.my-special-xml')
+    tree = et.parse(file.name)
     root = tree.getroot()
 
     persons = []
@@ -391,7 +393,6 @@ os:
   version: 9.1
 ```
 
-Requires: *Python >= 3.5*  
 Params: *strip=True, check=True, timeout=2*
 
 ### subprocess
@@ -412,8 +413,7 @@ Allows to spawn new processes, but unlike `shell` behaves like Python's standard
 ```yaml
 platform: Linux
 ```
-
-Requires: *Python >= 3.5*  
+ 
 Params: *stdout=True, stderr=True, check=True, timeout=2*
 
 ## Tips and tricks

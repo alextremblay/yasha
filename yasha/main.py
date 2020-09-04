@@ -155,15 +155,16 @@ class Yasha:
             parser = self.parsers.get(ext)
             if not parser:
                 raise Exception(f"No parser found for data file {file}")
-            # Yasha 5.0 introduced a new function signature for parsers. 
-            # Parsers written for yasha 4.4 and below expect one argument called file, and expect it to be an open binary file.
-            # New parsers accept two arguments: one called filepath which is an instance of pathlib.Path, and another called encoding, 
-            # which is a str representation of an encoding format like 'utf-8`
-            if parser.__code__.co_varnames[0] == 'file':
+            # Yasha 4.4 and below used a global variable to track the file encoding each file parser should use.
+            # In Yasha 5.0, the Yasha class instance keeps track of that. 
+            # We need a way to notify the file parsers what the value of the Yasha instance's encoding property is, 
+            # without breaking backwards compatability with existing file parsers people have 
+            # put into extension files out in the wild.
+            if parser.__code__.co_argcount < 2:
                 # This is an old-style parser
                 data.update(parser(file.open('rb')))
             else:
-                data.update(parser(file, self.encoding))
+                data.update(parser(file.open('rb'), encoding=self.encoding))
         return data
 
     def _load_extensions_file(self, extensions_file: Path, env: Environment = None, parsers: dict = None):

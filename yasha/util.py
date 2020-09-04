@@ -136,7 +136,7 @@ def load_jinja(
 def parse_variable_file(file: Path):
     try:
         file_extension = file.suffix
-        return PARSERS[file_extension](file)
+        return PARSERS[file_extension](file.open('rb'))
     except AttributeError:
         return dict()
     except KeyError:
