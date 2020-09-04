@@ -157,7 +157,7 @@ If the column name has a space in it, the cell can only be accessed with 'square
 
 ### Automatic file variables look up
 
-If no variable file is explicitly given, Yasha will look for one by searching for a file named in the same way than the corresponding template but with the file extension either `.json`, `.yaml`, `.yml`, `.toml`, or `.xml`.
+Yasha will automatically look for additional variable files by searching for a file named in the same way as the corresponding template but with one of the supported data file extensions `.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.csv`, or `.xml`.
 
 For example, consider the following template and variable files
 
@@ -216,6 +216,8 @@ foo.h.yaml
 foo.yaml
 ```
 
+If the template is not in a subdirectory of the current working directory, only the directory which the template is in will be checked for associated variable files
+
 ## Template extensions
 
 You can extend Yasha by custom Jinja [extensions](http://jinja.pocoo.org/docs/dev/extensions/#module-jinja2.ext), [tests](http://jinja.pocoo.org/docs/dev/api/#custom-tests) and [filters](http://jinja.pocoo.org/docs/dev/api/#custom-filters) by defining those in a separate Python source file given via command-line option `-e`, or `--extensions` as shown below
@@ -244,7 +246,7 @@ is equal to:
 yasha -e template.py -v template.yaml template.j2
 ```
 
-Extensions files can end in `.py` or `.j2ext` and will automatically be picked up if their name matches the name of the template
+Extensions files can end in `.py`, `.j2ext`, `.jinja-ext`, or `.yasha` and will automatically be picked up if their name matches the name of the template
 
 ### Tests
 
@@ -290,9 +292,21 @@ FILTERS = {
 
 All classes derived from `jinja2.ext.Extension` are considered as Jinja extensions and will be added to the environment used to render the template.
 
+You can also include a `CLASSES` list containing fully-qualified jinja extension names to be added to the environment.
+
+The below example will add jinja's own `do` and `i18n` extensions to the environment:
+
+```python
+from jinja2.ext import do
+
+CLASSES = [
+    'jinja2.ext.i18n'
+]
+```
+
 ### Parsers
 
-If none of the built-in parsers fit into your needs, it's possible to declare your own parser within the extension file. Either create a function named as `parse_` + `<file extension>`, or define the parse-function in `PARSERS` dictionary with the key indicating the file extension. Yasha will then pass the variable file object for the function to be parsed and expects to get dictionary as a return value.
+If none of the built-in parsers fit into your needs, it's possible to declare your own parser within the extension file. Either create a function named as `parse_` + `<file extension>`, or define the parse-function in `PARSERS` dictionary with the key indicating the file extension. Yasha will then pass a `pthlib.Path` object representing the variable file for the function to be parsed and expects to get dictionary as a return value.
 
 For example, below is shown an example XML file and a custom parser for that.
 
@@ -315,8 +329,8 @@ For example, below is shown an example XML file and a custom parser for that.
 import xml.etree.ElementTree as et
 
 def parse_xml(file):
-    assert file.name.endswith('.xml')
-    tree = et.parse(file.name)
+    assert file.suffix == '.xml'
+    tree = et.parse(file)
     root = tree.getroot()
 
     persons = []
@@ -327,6 +341,10 @@ def parse_xml(file):
         })
 
     return dict(persons=persons)
+
+PARSERS = {
+    '.my-special-xml': parse_xml
+}
 ```
 
 ### Template syntax
