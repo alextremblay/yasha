@@ -22,12 +22,62 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from yasha.main import Yasha
+from jinja2.environment import Template
+from yasha.main import Yasha, find_template_companion_files
 from tests.conftest import wrap
 
 from pathlib import Path
 
-def test_datafile_loading(with_tmp_path):
+
+def test_template_companion_files(with_tmp_path):
+    test_data = wrap("""
+        deeply/nested/folder/structure/
+        deeply/nested/folder/structure/template.j2
+        deeply/nested/folder/structure/template.json
+        deeply/nested/folder/structure/template.yaml
+        deeply/nested/folder/structure/template.other
+        deeply/nested/folder/structure/template.py
+        deeply/nested/folder/structure/template.j2ext
+        deeply/nested/folder/structure/template.yasha
+        deeply/nested/folder/structure/template.jinja-ext
+        deeply/nested/folder/template.json
+        deeply/nested/folder/template.yaml
+        deeply/nested/folder/template.py
+        deeply/nested/template.xml
+        deeply/nested/template.j2ext
+        deeply/template.json
+        template.xml""").splitlines()
+    for path in test_data:
+        if path.endswith('/'):
+            Path(path).mkdir(parents=True)
+        else:
+            Path(path).touch()
+    template = Path(test_data[1])
+    expected_data_files = set([Path(p) for p in wrap("""
+        deeply/nested/folder/structure/template.json
+        deeply/nested/folder/structure/template.yaml
+        deeply/nested/folder/template.json
+        deeply/nested/folder/template.yaml
+        deeply/nested/template.xml
+        deeply/template.json""").splitlines()])
+    expected_extension_files = set([Path(p) for p in wrap("""
+        deeply/nested/folder/structure/template.py
+        deeply/nested/folder/structure/template.j2ext
+        deeply/nested/folder/structure/template.yasha
+        deeply/nested/folder/structure/template.jinja-ext
+        deeply/nested/folder/template.py
+        deeply/nested/template.j2ext""").splitlines()])
+    
+    data_files = find_template_companion_files(template, ['.json', '.yaml', '.xml'], Path('deeply/'))
+    extension_files = find_template_companion_files(template, ['.py', '.j2ext', '.jinja-ext', '.yasha'], Path('deeply/'))
+
+    assert data_files.issubset(expected_data_files) # assert every path in data files is in expected data files
+    assert data_files.isdisjoint(expected_extension_files) # assert every path in data files is NOT in expected extension files
+    assert extension_files.issubset(expected_extension_files)
+    assert extension_files.isdisjoint(expected_data_files)
+    
+
+def test_yasha_datafile_loading(with_tmp_path):
     "Variables in data files should be merged together. conflicting variables in later data files should overwrite those variables from previous data files"
     Path('data.json').write_text('{"key1": "value1","key2": {"subkey1": "value"},"key3": "value"}')
     Path('data.ini').write_text(wrap("""
@@ -42,21 +92,21 @@ def test_datafile_loading(with_tmp_path):
         key4:
           - value2
         """))
-    y = Yasha(data_files=['data.json', 'data.ini', 'data.toml', 'data.yaml'])
+    y = Yasha(variable_files=['data.json', 'data.ini', 'data.toml', 'data.yaml'])
     output = y.env.globals
     expected = {'key1': 'value1', 'key2': {'subkey2': 'value'}, 'key3': 'value2', 'key4': ['value2']}
     assert expected.items() <= output.items()  # assert that expected is a subset of output (ie. that all items in in expected are found in output)
 
-def test_inline_variables(with_tmp_path):
+def test_yasha_inline_variables(with_tmp_path):
     "Variables from the global_variables key should override variables in data files"
     Path('data.json').write_text('{"key1": "value1","key2": {"subkey1": "value"},"key3": "value"}')
-    y = Yasha(data_files=['data.json'], global_variables={'key1': 'value2'})
+    y = Yasha(variable_files=['data.json'], inline_variables={'key1': 'value2'})
     output = y.env.globals
     expected = {'key1': 'value2', 'key2': {'subkey1': 'value'}, 'key3': 'value'}
     assert expected.items() <= output.items()  # assert that expected is a subset of output (ie. that all items in in expected are found in output)
 
 
-def test_extension_file(with_tmp_path):
+def test_yasha_extension_file(with_tmp_path):
     Path("extension.py").write_text(wrap("""
         def test_divisiblebythree(number):
             return number % 3 == 0
@@ -110,7 +160,7 @@ def test_extension_file(with_tmp_path):
         COMMENT_END_STRING = '#>'
         """))
 
-    y = Yasha(yasha_extensions_file='extension.py')
+    y = Yasha(yasha_extensions_files=['extension.py'])
 
     assert 'divisiblebythree' in y.env.tests
     assert 'divisiblebyfour' in y.env.tests
@@ -132,7 +182,7 @@ def test_extension_file(with_tmp_path):
     assert y.env.comment_end_string == '#>'
 
 
-def test_extension_file_isolation(with_tmp_path):
+def test_yasha_extension_file_isolation(with_tmp_path):
     Path("tests.py").write_text(wrap("""
         def test_divisiblebythree(number):
             return number % 3 == 0
@@ -190,11 +240,11 @@ def test_extension_file_isolation(with_tmp_path):
         COMMENT_END_STRING = '#>'
         """))
 
-    y1 = Yasha(yasha_extensions_file='tests.py')
-    y2 = Yasha(yasha_extensions_file='filters.py')
-    y3 = Yasha(yasha_extensions_file='jinja_ext.py')
-    y4 = Yasha(yasha_extensions_file='parsers.py')
-    y5 = Yasha(yasha_extensions_file='jinja_conf.py')
+    y1 = Yasha(yasha_extensions_files=['tests.py'])
+    y2 = Yasha(yasha_extensions_files=['filters.py'])
+    y3 = Yasha(yasha_extensions_files=['jinja_ext.py'])
+    y4 = Yasha(yasha_extensions_files=['parsers.py'])
+    y5 = Yasha(yasha_extensions_files=['jinja_conf.py'])
 
     assert 'divisiblebythree' in y1.env.tests
     assert 'divisiblebyfour' in y1.env.tests
