@@ -172,7 +172,7 @@ def test_yasha_extension_file(with_tmp_path):
     assert 'jinja2.ext.InternationalizationExtension' in y.env.extensions
 
     assert '.specialxml' in y.parsers
-    assert y.parsers['.specialxml'] == y.parsers['.xml']
+    assert y.parsers['.specialxml'] == y.parsers['.xml'] # type: ignore
 
     assert y.env.block_end_string == '%>'
     assert y.env.block_start_string == '<%'
@@ -262,7 +262,7 @@ def test_yasha_extension_file_isolation(with_tmp_path):
     assert 'jinja2.ext.InternationalizationExtension' not in y4.env.extensions
 
     assert '.specialxml' in y4.parsers
-    assert y4.parsers['.specialxml'] == y4.parsers['.xml']
+    assert y4.parsers['.specialxml'] == y4.parsers['.xml'] # type: ignore
     assert '.specialxml' not in y5.parsers
 
     assert y4.env.block_end_string != '%>'

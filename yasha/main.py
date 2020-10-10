@@ -140,16 +140,14 @@ class Yasha:
             for config, value in jinja_configs.items():
                 setattr(self.env, config, value)
         for ext in self.yasha_extensions_files:
-            self.env, self.parsers = self._load_extensions_file(ext)
+            self._load_extensions_file(ext)
         self.env.loader = FileSystemLoader(self.template_lookup_paths)
-        self.env.globals.update(self._load_data_files(self.variable_files))  # data from the data files becomes the baseline for jinja global vars
+        self._load_data_files(self.variable_files)  # data from the data files becomes the baseline for jinja global vars
         self.env.globals.update(inline_variables) # data from inline variables / directly-specified global variables overrides data from the data files
 
-    def _load_data_files(self, files: Iterable[Path], parsers: dict = None) -> dict:
-        "load a list of data files using file parsers from self.parsers, and merge the resulting dicts together"
+    def _load_data_files(self, files: Iterable[Path]):
+        "load a list of data files using file parsers from self.parsers, and merge the resulting dicts together into the jinja env globals dict"
         data = {}
-        if not parsers:
-            parsers = self.parsers
         for file in files:
             ext = file.suffix
             parser = self.parsers.get(ext)
@@ -165,14 +163,12 @@ class Yasha:
                 data.update(parser(file.open('rb')))
             else:
                 data.update(parser(file.open('rb'), encoding=self.encoding))
-        return data
+        self.env.globals.update(data)
 
-    def _load_extensions_file(self, extensions_file: Path, env: Environment = None, parsers: dict = None):
+    def _load_extensions_file(self, extensions_file: Path):
         "Loads jinja and yasha extensions from a given extension file, and update the jinja environment with those extensions"
         from importlib.util import spec_from_file_location, module_from_spec
         from jinja2.ext import Extension
-        if not env: env = self.env # Use default env unless otherwise specified
-        if not parsers: parsers = self.parsers # Use default parsers unless otherwise specified
         # load the module
         filename = extensions_file.stem
         module_name = 'yasha_ext.' + filename
@@ -188,38 +184,38 @@ class Yasha:
             # Tests
             if name.startswith('test_'):
                 name = name[5:]
-                env.tests[name] = value
+                self.env.tests[name] = value
                 continue
             if name == 'TESTS':
-                env.tests.update(value)
+                self.env.tests.update(value)
                 continue
             
             # Filters
             if name.startswith('filter_'):
                 name = name[7:]
-                env.filters[name] = value
+                self.env.filters[name] = value
                 continue
             if name == 'FILTERS':
-                env.filters.update(value)
+                self.env.filters.update(value)
                 continue
             
             # Parsers
             if name.startswith('parse_'):
                 name = name[6:]
-                parsers['.' + name] = value
+                self.parsers['.' + name] = value
                 continue
             if name == 'PARSERS':
-                parsers.update(value)
+                self.parsers.update(value)
                 continue
             
             # Jinja Extensions
             if isinstance(value, type) and issubclass(value, Extension):
-                env.add_extension(value)
+                self.env.add_extension(value)
                 continue
             if name == 'CLASSES':
                 assert isinstance(value, list), f"The CLASSES variable in {extensions_file} must be a list of jinja extension classes, or strings referencing jinja extension classes"
                 for ext in value:
-                    env.add_extension(ext)
+                    self.env.add_extension(ext)
                 continue
                 
             # Jinja Configuration
@@ -230,14 +226,70 @@ class Yasha:
             ]
             if name in configuration_directives:
                 name = name.lower()
-                setattr(env, name, value)
-        return env, parsers
+                setattr(self.env, name, value)
+    
+    def render_template(self, 
+            template: Union[Path, str], 
+            find_data_files = True, 
+            find_extension_files = True, 
+            jinja_env_overrides = dict(), 
+            output: BinaryIO = None) -> Union[str, BinaryIO]:
+        """Render a single template
 
-    def _get_env_for_template(self, template: Union[Path, str]) -> Environment:
-        """When rendering or working with template files, we load extension files related to those templates, 
-        which alters the environment, and we add that template's parent directory to the template loader search path,
+        Args:
+            template (Union[Path, str]): 
+                Can be either the path to the template file to render, or a template string to render
+            find_data_files (bool, optional): 
+                Wether or not to automatically load implicit variable file data. 
+                See the `Automatic file variables look up` section of the README for details. 
+                Defaults to True.
+            find_extension_files (bool, optional): 
+                Wether or not to automatically load implicit extension files. 
+                See the `Template extensions` section of the README for details. 
+                Defaults to True.
+            jinja_env_overrides (dict, optional): Any Jinja environment configurations to override for this specific template.
+            output (BinaryIO, optional): an open binary file to render the template into.
+        """
+
+        if isinstance(template, Path):
+            # Automatic file lookup only works if template is a file. 
+            # If template is a str (like, for example, something piped in to Yasha's STDIN), then don't bother trying to find related files
+
+            if find_extension_files:
+                # load extension files related to this template, updating the local env and the local parsers dict
+                extension_files = find_template_companion_files(template, EXTENSION_FILE_FORMATS, self.root)
+                for ext in extension_files:
+                    self._load_extensions_file(ext)
+
+            if find_data_files:
+                # load variable files related to this template, merging their variables into the local env's globals object
+                data_files = find_template_companion_files(template, self.parsers.keys(), self.root)
+                self._load_data_files(data_files)
+            
+            # Add the template's directory to the template loader's search path
+            self.env.loader.searchpath.append(template.parent) # type: ignore
+            # Read the template string from the template path
+            template_text = template.read_text()
+        else:
+            template_text = template
+            
+        for k, v in jinja_env_overrides:
+            setattr(self.env, k, v)
+        
+        if output:
+            # Don't return the rendered template, stream it to a file
+            compiled_template: TemplateStream = self.env.from_string(template_text).stream()
+            compiled_template.enable_buffering(5)
+            compiled_template.dump(output, encoding=self.encoding)
+            return output
+        else:
+            return self.env.from_string(template_text).render()
+
+    def _make_isolated_env_for_template(self, template: Union[Path, str]) -> Environment:
+        """When rendering or working with multiple template files, we load extension files related to those templates, 
+        which alters the environment, and we add each template's parent directory to the template loader search path,
         which also alters the environment. That means processing one template with a Yasha instance alters the 
-        behaviour of the Yasha instance for all future templates processed. To avoid this, we derive a new jinja 
+        behaviour of the Yasha instance for all future templates processed. To avoid this, we creste an isolated jinja 
         environment for each template from the Yasha instance's base environment.
         """
         if isinstance(template, str):
@@ -256,79 +308,20 @@ class Yasha:
         env.loader = FileSystemLoader(searchpath=searchpath)
         return env
     
-    def render_template(self, 
-            template: Union[Path, str], 
-            find_data_files = True, 
-            find_extension_files = True, 
-            jinja_env_overrides = dict(), 
-            output: BinaryIO = None):
-        """Render a single template
-
-        Args:
-            template (Union[Path, str]): 
-                Can be either the path to the template file to render, or a template string to render
-            find_data_files (bool, optional): 
-                Wether or not to automatically load implicit variable file data. 
-                See the `Automatic file variables look up` section of the README for details. 
-                Defaults to True.
-            find_extension_files (bool, optional): 
-                Wether or not to automatically load implicit extension files. 
-                See the `Template extensions` section of the README for details. 
-                Defaults to True.
-            jinja_env_overrides (dict, optional): Any Jinja environment configurations to override for this specific template.
-            output (BinaryIO, optional): an open binary file to render the template into.
-        """
-        env = self._get_env_for_template(template)
-
-        if isinstance(template, Path):
-            # Automatic file lookup only works if template is a file. 
-            # If template is a str (like, for example, something piped in to Yasha's STDIN), then don't bother trying to find related files
-            parsers = self.parsers.copy()
-
-            if find_extension_files:
-                # load extension files related to this template, updating the local env and the local parsers dict
-                extension_files = find_template_companion_files(template, EXTENSION_FILE_FORMATS, self.root)
-                for ext in extension_files:
-                    env, parsers = self._load_extensions_file(ext, env, parsers)
-
-            if find_data_files:
-                # load variable files related to this template, merging their variables into the local env's globals object
-                data_files = find_template_companion_files(template, self.parsers.keys(), self.root)
-                env.globals.update(self._load_data_files(data_files, parsers))
-            
-            # Add the template's directory to the template loader's search path
-            env.loader.searchpath.append(template.parent) # type: ignore
-            # Read the template string from the template path
-            template_text = template.read_text()
-        else:
-            template_text = template
-            
-        for k, v in jinja_env_overrides:
-            setattr(env, k, v)
-        
-        if output:
-            # Don't return the rendered template, stream it to a file
-            compiled_template: TemplateStream = env.from_string(template_text).stream()
-            compiled_template.enable_buffering(5)
-            compiled_template.dump(output, encoding=self.encoding)
-        else:
-            return env.from_string(template_text).render()
-
     def get_makefile_dependencies(self, template: Union[Path, str]) -> List[Path]:
         """Produces a list of all files that the rendering of this template depends on, 
         including files referenced within {% include %}, {% import %}, and {% extends %}
         blocks within the template
         """
-        env = self._get_env_for_template(template)
         if isinstance(template, Path):
             template = template.read_text()
         dependencies = self.variable_files + self.yasha_extensions_files
-        referenced_template_partials = find_referenced_templates(env.parse(template)) # returns a generator
+        referenced_template_partials = find_referenced_templates(self.env.parse(template)) # returns a generator
         # convert the generator to a list, filtering out the None values
         referenced_template_partials: List[str] = list(filter(bool, referenced_template_partials))
 
         for relative_path in referenced_template_partials:
-            for basepath in env.loader.searchpath: # type: ignore
+            for basepath in self.env.loader.searchpath: # type: ignore
                 if not isinstance(basepath, Path): basepath = Path(basepath)
                 template_path = basepath / relative_path
                 if template_path.is_file:

@@ -493,7 +493,7 @@ from yasha.parsers import PARSERS
 
 def wrapper(parse):
    def postprocess(file):
-       variables = parse(file)
+       variables = parse(file) 
        variables['foo'] = 'bar' # foo should always be bar
        return variables
    return postprocess
